@@ -1,28 +1,28 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
 Citizen.CreateThread(function()
-  local sin, cos, atan2, abs, rad, deg = math.sin, math.cos, math.atan2, math.abs, math.rad, math.deg
+  -- Constants
   local EARLY_STOP_MULTIPLIER = 0.5
   local DEFAULT_GTA_FALL_DISTANCE = 8.3
   local DEFAULT_OPTIONS = {waitTime=0.5, grappleSpeed=20.0}
 
+  -- Grapple table to hold functions
   Grapple = {}
 
-  --[[ Utility Functions ]]
+  -- Utility Functions
   local function DirectionToRotation(dir, roll)
-    local x, y, z
-    z = -deg(atan2(dir.x, dir.y))
-    local rotpos = vector3(dir.z, #vector2(dir.x, dir.y), 0.0)
-    x = deg(atan2(rotpos.x, rotpos.y))
-    y = roll
+    local z = -math.deg(math.atan2(dir.x, dir.y))
+    local rotpos = vector3(dir.z, math.sqrt(dir.x * dir.x + dir.y * dir.y), 0.0)
+    local x = math.deg(math.atan2(rotpos.x, rotpos.y))
+    local y = roll
     return vector3(x, y, z)
   end
 
   local function RotationToDirection(rot)
-    local rotZ = rad(rot.z)
-    local rotX = rad(rot.x)
-    local cosOfRotX = abs(cos(rotX))
-    return vector3(-sin(rotZ) * cosOfRotX, cos(rotZ) * cosOfRotX, sin(rotX))
+    local rotZ = math.rad(rot.z)
+    local rotX = math.rad(rot.x)
+    local cosRotX = math.abs(math.cos(rotX))
+    return vector3(-math.sin(rotZ) * cosRotX, math.cos(rotZ) * cosRotX, math.sin(rotX))
   end
 
   local function RayCastGamePlayCamera(dist)
@@ -40,26 +40,21 @@ Citizen.CreateThread(function()
     return RayCastGamePlayCamera(dist)
   end
 
-  -- TODO: This can eventually be removed once the logic is fully tested
-  local function DrawSphere(pos, radius, r, g, b, a)
-    DrawMarker(28, pos, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, radius, radius, radius, r, g, b, a, false, false, 2, nil, nil, false)
-  end
-
   -- Fill in defaults for any options that aren't present
-  local function _ensureOptions(options)
+  local function ensureOptions(options)
     for k, v in pairs(DEFAULT_OPTIONS) do
       if options[k] == nil then options[k] = v end
     end
   end
 
-  local function _waitForFall(pid, ped, stopDistance)
+  local function waitForFall(pid, ped, stopDistance)
     SetPlayerFallDistance(pid, 10.0)
     while GetEntityHeightAboveGround(ped) > stopDistance do
       SetPedCanRagdoll(ped, false)
-      Wait(0)
+      Citizen.Wait(0)
     end
     SetPlayerFallDistance(pid, DEFAULT_GTA_FALL_DISTANCE)
-    Wait(1500)
+    Citizen.Wait(1500)
     SetPedCanRagdoll(ped, true)
   end
 
@@ -68,12 +63,12 @@ Citizen.CreateThread(function()
     PinRopeVertex(rope, GetRopeVertexCount(rope) - 1, GetPedBoneCoords(ped, boneId, 0.0, 0.0, 0.0))
   end
 
-
+  -- Grapple object constructor
   function Grapple.new(dest, options)
     local self = {}
     options = options or {}
-    _ensureOptions(options)
-    local grappleId = math.random((-2^32)+1, 2^32-1)
+    ensureOptions(options)
+    local grappleId = math.random((-2^31), 2^31-1)
     if options.grappleId then
       grappleId = options.grappleId
     end
@@ -85,12 +80,12 @@ Citizen.CreateThread(function()
     local start = GetEntityCoords(ped)
     local notMyPed = options.plyServerId and options.plyServerId ~= GetPlayerServerId(PlayerId())
     local fromStartToDest = dest - start
-    local dir = fromStartToDest / #fromStartToDest
-    local length = #fromStartToDest
+    local dir = fromStartToDest / math.sqrt(fromStartToDest.x^2 + fromStartToDest.y^2 + fromStartToDest.z^2)
+    local length = math.sqrt(fromStartToDest.x^2 + fromStartToDest.y^2 + fromStartToDest.z^2)
     local finished = false
     local rope
     if pid ~= -1 then
-      RopeLoadTextures() -- load rope fix
+      RopeLoadTextures()
       rope = AddRope(dest, 0.0, 0.0, 0.0, 0.0, 5, 0.0, 0.0, 1.0, false, false, false, 5.0, false)
       if notMyPed then
         local headingToSet = GetEntityHeading(ped)
@@ -100,21 +95,20 @@ Citizen.CreateThread(function()
       end
     end
 
-    local function _setupDestroyEventHandler()
-      local event = nil
+    local function setupDestroyEventHandler()
       local eventName = 'mka-grapple:ropeDestroyed:' .. tostring(grappleId)
       RegisterNetEvent(eventName)
-      event = AddEventHandler(eventName, function()
+      local event = AddEventHandler(eventName, function()
         self.destroy(false)
         RemoveEventHandler(event)
       end)
     end
 
-    function self._handleRope(rope, ped, boneIndex, dest)
-      Citizen.CreateThread(function ()
+    function self.handleRope(rope, ped, boneIndex, dest)
+      Citizen.CreateThread(function()
         while not finished do
           PinRope(rope, ped, boneIndex, dest)
-          Wait(0)
+          Citizen.Wait(0)
         end
         DeleteChildRope(rope)
         DeleteRope(rope)
@@ -126,15 +120,14 @@ Citizen.CreateThread(function()
       local distTraveled = 0.0
       local currentPos = start
       local lastPos = currentPos
-      local rotationMultiplier = notMyPed == true and -1 or 1
+      local rotationMultiplier = notMyPed and -1 or 1
       local rot = DirectionToRotation(-dir * rotationMultiplier, 0.0)
       local lastRot = rot
-      -- Offset pitch 90 degrees so player is facedown
       rot = rot + vector3(90.0 * rotationMultiplier, 0.0, 0.0)
-      Wait(options.waitTime * 1000)
+      Citizen.Wait(options.waitTime * 1000)
       while not finished and distTraveled < length do
         local fwdPerFrame = dir * options.grappleSpeed * GetFrameTime()
-        distTraveled = distTraveled + #fwdPerFrame
+        distTraveled = distTraveled + math.sqrt(fwdPerFrame.x^2 + fwdPerFrame.y^2 + fwdPerFrame.z^2)
         if distTraveled > length then
           distTraveled = length
           currentPos = dest
@@ -143,21 +136,21 @@ Citizen.CreateThread(function()
         end
         SetEntityCoords(ped, currentPos)
         SetEntityRotation(ped, rot)
-        if distTraveled > 3 and HasEntityCollidedWithAnything(ped) == 1 then
+        if distTraveled > 3 and HasEntityCollidedWithAnything(ped) then
           SetEntityCoords(ped, lastPos - (dir * EARLY_STOP_MULTIPLIER))
           SetEntityRotation(ped, lastRot)
           break
         end
         lastPos = currentPos
         lastRot = rot
-        Wait(0)
+        Citizen.Wait(0)
       end
       self.destroy()
-      _waitForFall(pid, ped, 3.0)
+      waitForFall(pid, ped, 3.0)
     end
 
     function self.activate()
-      CreateThread(self.activateSync)
+      Citizen.CreateThread(self.activateSync)
     end
 
     function self.destroy(shouldTriggerDestroyEvent)
@@ -166,14 +159,13 @@ Citizen.CreateThread(function()
         DeleteEntity(ped)
         NetworkConcealPlayer(pid, false, false)
       end
-      if shouldTriggerDestroyEvent or shouldTriggerDestroyEvent == nil then
-        -- Should trigger if shouldTriggerDestroyEvent is true or nil (not passed)
+      if shouldTriggerDestroyEvent == nil or shouldTriggerDestroyEvent then
         TriggerServerEvent('mka-grapple:destroyRope', grappleId)
       end
     end
 
     if pid ~= -1 then
-      self._handleRope(rope, ped, 0x49D9, dest)
+      self.handleRope(rope, ped, 0x49D9, dest)
       if notMyPed then
         self.activate()
       end
@@ -181,77 +173,39 @@ Citizen.CreateThread(function()
     if options.plyServerId == nil then
       TriggerServerEvent('mka-grapple:createRope', grappleId, dest)
     else
-      _setupDestroyEventHandler()
+      setupDestroyEventHandler()
     end
     return self
   end
 
-  --[[ Test Stuff ]]
-  --[[ Test Stuff ]]
-
-  --[[
-  Citizen.CreateThread(function ()
-     while true do
-      Wait(1000)
-       --local hit, pos, _, _ = RayCastGamePlayCamera(40)
-       local hit, pos, _, _ = GrappleCurrentAimPoint(4000)
-       if hit == 1 then
-         --DrawSphere(pos, 0.1, 255, 0, 0, 255)
-         --if IsControlJustReleased(0, 51) then
-         shownGrappleButton = true
-         exports["np-ui"]:showInteraction('[Shoot] Grapple!', 'inform')
-       elseif shownGrappleButton and (not freeAiming or hit ~= 1) then
-          shownGrappleButton = false
-          exports["np-ui"]:hideInteraction()
-       end
-         if IsControlJustReleased(0, 24) then
-          exports["np-ui"]:hideInteraction()
-           
-           local grapple = Grapple.new(pos)
-           grapple.activate()
-         end
-
-       RemoveWeaponFromPed(PlayerPedId(), grappleGunHash)
-       Wait(0)
-     end
-  end)
-  ]]
-  
-  --[[ Test Stuff ]]
-  --[[ Test Stuff ]]
-
-
-
+  -- Grapple gun variables
   local grappleGunHash = -2009644972
-  local grappleGunTintIndex = 2
   local grappleGunSuppressor = "COMPONENT_AT_PI_SUPP_02"
   local grappleGunEquipped = false
   local shownGrappleButton = false
 
+  -- Command to use grapple
+  RegisterCommand("grapple", function()
+    TriggerEvent("mka-grapple:useGrapple")
+  end)
 
-RegisterCommand("grapple", function ()
-  TriggerEvent("mka-grapple:useGrapple") -- If you wanna item then just add one for some like qbcore, just add an item change event item and done.
-end)
-
+  -- Event handler for using grapple
   RegisterNetEvent('mka-grapple:useGrapple')
-  AddEventHandler('mka-grapple:useGrapple', function(source)
-    local src = source
-    local Player = QBCore.Functions.GetPlayerData(src)
-
+  AddEventHandler('mka-grapple:useGrapple', function()
     grappleGunEquipped = not grappleGunEquipped
     if grappleGunEquipped then
-      --GiveWeaponToPed(PlayerPedId(), grappleGunHash, 0, 0, 1)
       GiveWeaponComponentToPed(PlayerPedId(), grappleGunHash, grappleGunSuppressor)
-      SetPedWeaponTintIndex(PlayerPedId(), grappleGunHash, 2)
+      SetPedWeaponTintIndex(PlayerPedId(), grappleGunHash, grappleGunTintIndex)
       SetAmmoInClip(PlayerPedId(), grappleGunHash, 0)
     else
       RemoveWeaponFromPed(PlayerPedId(), grappleGunHash)
     end
     local ply = PlayerId()
+
     Citizen.CreateThread(function()
       while grappleGunEquipped do
         local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-        if (veh and veh ~= 0) or GetSelectedPedWeapon(PlayerPedId()) ~= grappleGunHash then
+        if veh ~= 0 or GetSelectedPedWeapon(PlayerPedId()) ~= grappleGunHash then
           grappleGunEquipped = false
           RemoveWeaponFromPed(PlayerPedId(), grappleGunHash)
           return
@@ -261,13 +215,11 @@ end)
         if not shownGrappleButton and freeAiming and hit == 1 then
           shownGrappleButton = true
           Citizen.Wait(250)
-          --exports["np-ui"]:showInteraction('[E] Grapple!', 'inform')
           exports["np-ui"]:showInteraction('[Shoot] Grapple!', 'inform')
         elseif shownGrappleButton and (not freeAiming or hit ~= 1) then
           shownGrappleButton = false
           exports["np-ui"]:hideInteraction()
         end
-        --if IsControlJustReleased(0, 51) and freeAiming and grappleGunEquipped then  -- E
         if IsControlJustReleased(0, 24) and freeAiming and grappleGunEquipped then  -- mouse left click
           hit, pos, _, _ = GrappleCurrentAimPoint(4000)
           exports["np-ui"]:hideInteraction()
@@ -279,8 +231,6 @@ end)
             grapple.activate()
             Citizen.Wait(50)
             RemoveWeaponFromPed(PlayerPedId(), grappleGunHash)
-            --TriggerServerEvent("QBCore:Server:RemoveItem", "weapon_snspistol_mk2", 1)
-            --print(4)
             shownGrappleButton = false
           end
         end
@@ -289,10 +239,12 @@ end)
     end)
   end)
 
+  -- Event handler for when a rope is created
   RegisterNetEvent('mka-grapple:ropeCreated')
   AddEventHandler('mka-grapple:ropeCreated', function(grappleId, dest)
-    if plyServerId == GetPlayerServerId(PlayerId()) then return end
+    local plyServerId = GetPlayerServerId(PlayerId())
+    if plyServerId == source then return end
     TriggerServerEvent("InteractSound:PlayOnSource", "grapple-shot", 0.5)
-    Grapple.new(dest, {plyServerId=GetPlayerServerId(PlayerId()), grappleId=grappleId})
+    Grapple.new(dest, {plyServerId = plyServerId, grappleId = grappleId})
   end)
 end)
