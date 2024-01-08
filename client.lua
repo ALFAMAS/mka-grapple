@@ -239,6 +239,39 @@ Citizen.CreateThread(function()
     end)
   end)
 
+    --[[ Test Stuff ]]
+  --[[ Test Stuff ]]
+
+  --[[
+  Citizen.CreateThread(function ()
+     while true do
+      Wait(1000)
+       --local hit, pos, _, _ = RayCastGamePlayCamera(40)
+       local hit, pos, _, _ = GrappleCurrentAimPoint(4000)
+       if hit == 1 then
+         --DrawSphere(pos, 0.1, 255, 0, 0, 255)
+         --if IsControlJustReleased(0, 51) then
+         shownGrappleButton = true
+         exports["np-ui"]:showInteraction('[Shoot] Grapple!', 'inform')
+       elseif shownGrappleButton and (not freeAiming or hit ~= 1) then
+          shownGrappleButton = false
+          exports["np-ui"]:hideInteraction()
+       end
+         if IsControlJustReleased(0, 24) then
+          exports["np-ui"]:hideInteraction()
+           
+           local grapple = Grapple.new(pos)
+           grapple.activate()
+         end
+       RemoveWeaponFromPed(PlayerPedId(), grappleGunHash)
+       Wait(0)
+     end
+  end)
+  ]]
+
+  --[[ Test Stuff ]]
+  --[[ Test Stuff ]]
+
   -- Event handler for when a rope is created
   RegisterNetEvent('mka-grapple:ropeCreated')
   AddEventHandler('mka-grapple:ropeCreated', function(grappleId, dest)
